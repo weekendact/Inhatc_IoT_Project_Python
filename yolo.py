@@ -6,7 +6,7 @@ from ultralytics import YOLO
 model = YOLO(r"yolov8s.pt")
 
 # 라즈베리파이 서버 주소
-RASPBERRY_PI_URL = "http://192.168.101.101:5000"  # 라즈베리파이 IP 주소
+RASPBERRY_PI_URL = "http://192.168.101.101:5000"
 
 # 웹캠 열기
 camera = cv2.VideoCapture(0)
@@ -38,6 +38,12 @@ try:
             print("사람이 감지되었습니다. 신호 전송...")
             try:
                 requests.post(f"{RASPBERRY_PI_URL}/action", json={"status": "detected"})
+            except Exception as e:
+                print(f"라즈베리파이에 신호를 보낼 수 없습니다: {e}")
+        else:
+            print("사람이 감지되지 않았습니다. LED와 모터를 끕니다.")
+            try:
+                requests.post(f"{RASPBERRY_PI_URL}/action", json={"status": "not_detected"})
             except Exception as e:
                 print(f"라즈베리파이에 신호를 보낼 수 없습니다: {e}")
 
