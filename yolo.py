@@ -1,58 +1,54 @@
-import socket
 import cv2
-import numpy as np
+import requests
 from ultralytics import YOLO
 
 # YOLOv8 모델 로드
 model = YOLO(r"yolov8s.pt")
 
-# UDP 소켓 설정
-HOST = "0.0.0.0"  # 모든 IP에서 수신
-PORT = 9999
-BUFFER_SIZE = 65536  # 최대 패킷 크기
+# 라즈베리파이 서버 주소
+RASPBERRY_PI_URL = "http://192.168.101.101:5000"  # 라즈베리파이 IP 주소
 
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server_socket.bind((HOST, PORT))
+# 웹캠 열기
+camera = cv2.VideoCapture(0)
 
-print(f"UDP 서버 대기 중... (포트 {PORT})")
+if not camera.isOpened():
+    print("웹캠을 열 수 없습니다.")
+    exit()
 
-while True:
-    # 데이터 수신
-    data, addr = server_socket.recvfrom(BUFFER_SIZE)
-    print(f"{addr}에서 데이터 수신 ({len(data)} bytes)")
-
-    # 데이터를 디코딩하여 이미지로 변환
-    nparr = np.frombuffer(data, np.uint8)
-    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-    if frame is None:
-        print("프레임 디코딩 실패")
-        continue
-
-    # YOLOv8로 객체 탐지
-    results = model.predict(source=frame, conf=0.5, show=False)
-
-    # "person" 클래스 판별
-    person_detected = False
-    for result in results[0].boxes.data:
-        cls = int(result[5])  # 클래스 ID
-        if model.names[cls] == "person":
-            person_detected = True
+try:
+    while True:
+        ret, frame = camera.read()
+        if not ret:
+            print("웹캠에서 프레임을 가져올 수 없습니다.")
             break
 
-    # 결과 출력
-    if person_detected:
-        print(1)  # 터미널에 1 출력
-    else:
-        print(0)  # 터미널에 0 출력 (필요시)
+        # YOLOv8 객체 탐지
+        results = model.predict(source=frame, conf=0.5, show=False)
 
-    # (선택) 탐지 결과 화면에 출력
-    result_frame = results[0].plot()
-    cv2.imshow("Object Detection", result_frame)
+        # "person" 클래스 판별
+        person_detected = False
+        for result in results[0].boxes.data:
+            cls = int(result[5])  # 클래스 ID
+            if model.names[cls] == "person":
+                person_detected = True
+                break
 
-    # 'q'를 눌러 종료
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        # 라즈베리파이에 신호 전송
+        if person_detected:
+            print("사람이 감지되었습니다. 신호 전송...")
+            try:
+                requests.post(f"{RASPBERRY_PI_URL}/action", json={"status": "detected"})
+            except Exception as e:
+                print(f"라즈베리파이에 신호를 보낼 수 없습니다: {e}")
 
-server_socket.close()
-cv2.destroyAllWindows()
+        # 탐지 결과 시각화
+        result_frame = results[0].plot()
+        cv2.imshow("Object Detection", result_frame)
+
+        # 'q'를 눌러 종료
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+finally:
+    camera.release()
+    cv2.destroyAllWindows()
