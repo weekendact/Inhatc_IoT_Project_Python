@@ -7,15 +7,14 @@ from ultralytics import YOLO
 model = YOLO(r"yolov8s.pt")
 
 # UDP 소켓 설정
+HOST = "0.0.0.0"  # 모든 IP에서 수신
 PORT = 9999
 BUFFER_SIZE = 65536  # 최대 패킷 크기
 
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-server_socket.bind(("", PORT))
+server_socket.bind((HOST, PORT))
 
-print("브로드캐스트 수신 대기 중...")
+print(f"UDP 서버 대기 중... (포트 {PORT})")
 
 while True:
     # 데이터 수신
@@ -25,6 +24,10 @@ while True:
     # 데이터를 디코딩하여 이미지로 변환
     nparr = np.frombuffer(data, np.uint8)
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if frame is None:
+        print("프레임 디코딩 실패")
+        continue
 
     # YOLOv8로 객체 탐지
     results = model.predict(source=frame, conf=0.5, show=False)
@@ -39,11 +42,11 @@ while True:
 
     # 결과 출력
     if person_detected:
-        print(1)
+        print(1)  # 터미널에 1 출력
     else:
-        print(0)
+        print(0)  # 터미널에 0 출력 (필요시)
 
-    # (선택) 탐지 결과 시각화
+    # (선택) 탐지 결과 화면에 출력
     result_frame = results[0].plot()
     cv2.imshow("Object Detection", result_frame)
 
