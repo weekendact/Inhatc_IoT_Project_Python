@@ -1,19 +1,20 @@
 import cv2
 import requests
-import streamlit as st
 from ultralytics import YOLO
+import streamlit as st
 
 # 라즈베리파이 서버 주소
 RASPBERRY_PI_URL = "http://192.168.101.101:5000"
 
-# YOLOv8 모델 로드
-model = YOLO(r"fire-detection.pt")  # 화재 탐지 모델 경로
+# YOLO 모델 로드
+car_model = YOLO("yolov8m.pt")  # COCO 데이터셋 사전 학습 모델 (car 포함)
+fire_model = YOLO("best.pt")  # 화재 탐지 커스텀 모델
 
 # Streamlit 페이지 설정
 st.set_page_config(layout="wide")
-st.title("YOLOv8 Fire Detection with Raspberry Pi Integration")
+st.title("YOLOv8 Car and Fire Detection")
 
-# 웹캠 선택
+# 웹캠 연결
 camera = cv2.VideoCapture(0)
 if not camera.isOpened():
     st.error("웹캠을 열 수 없습니다.")
@@ -21,7 +22,7 @@ if not camera.isOpened():
 
 # Streamlit 인터페이스 구성
 FRAME_WINDOW = st.image([])
-status_text = st.empty()  # 상태 메시지 출력
+status_text = st.empty()  # 화재 상태 메시지 출력
 
 try:
     while True:
@@ -30,37 +31,31 @@ try:
             st.error("웹캠에서 프레임을 가져올 수 없습니다.")
             break
 
-        # YOLOv8 객체 탐지
-        results = model.predict(source=frame, conf=0.5, show=False)
+        # 차량 탐지
+        car_results = car_model.predict(source=frame, conf=0.5, show=False)
+        car_frame = car_results[0].plot()  # Bounding Box 그리기
 
-        # Bounding Box가 그려진 결과 프레임
-        result_frame = results[0].plot()
+        # 화재 탐지
+        fire_results = fire_model.predict(source=frame, conf=0.5, show=False)
+        fire_detected = any(fire_model.names[int(result[5])] == "fire" for result in fire_results[0].boxes.data)
 
-        # "fire" 클래스 판별
-        fire_detected = False
-        for result in results[0].boxes.data:
-            cls = int(result[5])  # 클래스 ID
-            if model.names[cls] == "fire":
-                fire_detected = True
-                break
-
-        # 라즈베리파이에 신호 전송
+        # 라즈베리파이에 신호 전송 (화재가 감지된 경우)
         if fire_detected:
-            status_text.write("🔴 **불이 감지되었습니다! 라즈베리파이에 신호 전송 중...**")
+            status_text.write("🔴 **화재 감지: 라즈베리파이에 신호 전송 중...**")
             try:
-                requests.post(f"{RASPBERRY_PI_URL}/action", json={"status": "fire_detected"})
+                requests.post(f"{RASPBERRY_PI_URL}/action", json={"status": "detected"})
             except Exception as e:
                 st.error(f"라즈베리파이에 신호를 보낼 수 없습니다: {e}")
         else:
-            status_text.write("🟢 **불이 감지되지 않았습니다.**")
-            try:
-                requests.post(f"{RASPBERRY_PI_URL}/action", json={"status": "no_fire"})
-            except Exception as e:
-                st.error(f"라즈베리파이에 신호를 보낼 수 없습니다: {e}")
+            status_text.write("🟢 **화재가 감지되지 않았습니다.**")
 
-        # OpenCV 이미지를 Streamlit용으로 변환
-        result_frame = cv2.cvtColor(result_frame, cv2.COLOR_BGR2RGB)
-        FRAME_WINDOW.image(result_frame, channels="RGB")
+        # 두 결과를 합성하여 화면에 표시
+        fire_frame = fire_results[0].plot()
+        combined_frame = cv2.addWeighted(car_frame, 0.5, fire_frame, 0.5, 0)
+        combined_frame = cv2.cvtColor(combined_frame, cv2.COLOR_BGR2RGB)
+
+        # Streamlit에 결과 표시
+        FRAME_WINDOW.image(combined_frame, channels="RGB")
 
 finally:
     camera.release()
