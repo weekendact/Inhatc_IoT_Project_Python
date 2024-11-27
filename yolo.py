@@ -7,7 +7,7 @@ from ultralytics import YOLO
 RASPBERRY_PI_URL = "http://192.168.101.101:5000"
 
 # YOLOv8 모델 로드
-model = YOLO(r"best.pt")  # 화재 탐지 모델 경로
+model = YOLO(r"yolov8m.pt")  # 화재 탐지 모델 경로
 
 # Streamlit 페이지 설정
 st.set_page_config(layout="wide")
